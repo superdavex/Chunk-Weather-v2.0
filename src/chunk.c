@@ -3,7 +3,13 @@
 #include <ctype.h>
 
 #include "config.h"
-	
+
+#define PERSIST_KEY_TEMP   100
+#define PERSIST_KEY_HIGH   101
+#define PERSIST_KEY_LOW    102
+#define PERSIST_KEY_DATE   103
+#define PERSIST_KEY_WICON   104
+
 static Window *mWindow;
 
 static Layer *mWindowLayer;
@@ -50,6 +56,8 @@ static int mTemperatureIcon=48;         //0 to 48
 static int mTemperatureHigh=999;          //-999 to 999
 static int mTemperatureLow=999;            //-999 to 999
 
+static int mLastUpdated=0;
+
 
 enum {
   STYLE_KEY = 0x0,                     // TUPLE_INT
@@ -66,10 +74,15 @@ enum {
 
 static uint8_t BATTERY_ICONS[] = {
 	RESOURCE_ID_BATTERY_100,
+  RESOURCE_ID_BATTERY_090,
 	RESOURCE_ID_BATTERY_080,
+  RESOURCE_ID_BATTERY_070,
 	RESOURCE_ID_BATTERY_060,
+  RESOURCE_ID_BATTERY_050,
 	RESOURCE_ID_BATTERY_040,
+  RESOURCE_ID_BATTERY_030,
 	RESOURCE_ID_BATTERY_020,
+  RESOURCE_ID_BATTERY_010,
 	RESOURCE_ID_BATTERY_000
 };
 
@@ -287,13 +300,6 @@ void weather_set_temperature(int16_t t) {
 	text_layer_set_text(mTemperatureLayer, mTemperatureText);  
 }
 
-void weather_set_loading() {
-	snprintf(mHighLowText, sizeof(mHighLowText), "%s", "CHUNK v2.0"); //"LOW 999\u00B0 HIGH 999\u00B0"); //
-	text_layer_set_text(mHighLowLayer, mHighLowText);
-	weather_set_icon(48);  
-	weather_set_temperature(999);
-}
-
 void weather_set_highlow(int16_t high, int16_t low) {
 	
 	char *sys_locale = setlocale(LC_ALL, "");
@@ -314,6 +320,15 @@ void weather_set_highlow(int16_t high, int16_t low) {
 	}
 	
 	text_layer_set_text(mHighLowLayer, mHighLowText);
+}
+
+void weather_set_loading() {
+	//snprintf(mHighLowText, sizeof(mHighLowText), "%s", "CHUNK v2.0"); //"LOW 999\u00B0 HIGH 999\u00B0"); //
+  weather_set_highlow(mTemperatureHigh,mTemperatureLow);
+  
+	text_layer_set_text(mHighLowLayer, mHighLowText);
+	weather_set_icon(mTemperatureIcon);  
+	weather_set_temperature(mTemperatureDegrees);
 }
 
 // HORIZONTAL LINE //
@@ -568,26 +583,78 @@ static void update_battery(BatteryChargeState charge_state) {
 
   batteryPercent = charge_state.charge_percent;
   
-  if(batteryPercent>=90) {
+  if(batteryPercent==100) {
      img = 0;
   }
-  else if(batteryPercent>=80) {
+  else if(batteryPercent>=90) {
      img = 1;
   }
-  else if(batteryPercent>=60) {
+  else if(batteryPercent>=80) {
      img = 2;
   }
-  else if(batteryPercent>=40) {
+  else if(batteryPercent>=70) {
      img = 3;
   }
-  else if(batteryPercent>=20) {
+  else if(batteryPercent>=60) {
      img = 4;
   }
-  else {
+  else if(batteryPercent>=50) {
      img = 5;
+  }
+  else if(batteryPercent>=40) {
+     img = 6;
+  }
+  else if(batteryPercent>=30) {
+     img = 7;
+  }
+  else if(batteryPercent>=20) {
+     img = 8;
+  }
+  else {
+     img = 9;
   }
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "BATTERY %d %d", batteryPercent, img);
   set_container_image(&battery_image, battery_image_layer, BATTERY_ICONS[img], GPoint(50, 82));
+}
+
+void write_persist_data(void){
+  
+  persist_write_int(PERSIST_KEY_TEMP, mTemperatureDegrees);
+  persist_write_int(PERSIST_KEY_HIGH, mTemperatureHigh);
+  persist_write_int(PERSIST_KEY_LOW, mTemperatureLow);
+  persist_write_int(PERSIST_KEY_WICON, mTemperatureIcon);
+  //persist_write_int(PERSIST_KEY_DATE, num_launches);
+  
+}
+
+void read_persist_data(void){
+   
+  if (persist_exists(PERSIST_KEY_TEMP)) {
+    // Load stored count
+    mTemperatureDegrees = persist_read_int(PERSIST_KEY_TEMP);
+  }
+  
+  if (persist_exists(PERSIST_KEY_HIGH)) {
+    // Load stored count
+    mTemperatureHigh = persist_read_int(PERSIST_KEY_HIGH);
+  }
+  
+   if (persist_exists(PERSIST_KEY_LOW)) {
+    // Load stored count
+    mTemperatureLow = persist_read_int(PERSIST_KEY_LOW);
+  }
+  
+   if (persist_exists(PERSIST_KEY_WICON)) {
+    // Load stored count
+    mTemperatureIcon = persist_read_int(PERSIST_KEY_WICON);
+  }
+  
+   //if (persist_exists(PERSIST_KEY_DATE)) {
+    // Load stored count
+    //num_launches = persist_read_int(PERSIST_KEY_DATE);
+  //}
+  
+   
 }
 
 void handle_init(void) {
@@ -687,6 +754,9 @@ void handle_init(void) {
 	text_layer_set_text_alignment(mHighLowLayer, GTextAlignmentCenter);
 	layer_add_child(mWindowLayer, text_layer_get_layer(mHighLowLayer));
 
+  // READ Persist data
+  read_persist_data();
+  
 	weather_set_loading();
 
   app_message_init();
@@ -707,6 +777,8 @@ void handle_init(void) {
 
 void handle_deinit(void) {
 
+  write_persist_data();
+  
   fonts_unload_custom_font(mTimeFont);
 
   //fonts_unload_custom_font(mDateFont);
