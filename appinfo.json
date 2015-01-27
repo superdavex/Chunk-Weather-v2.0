@@ -21,6 +21,12 @@
     "resources": {
         "media": [
             {
+                "file": "images/menu_icon.png",
+                "menuIcon": true,
+                "name": "IMAGE_MENU_ICON",
+                "type": "png"
+            },
+            {
                 "file": "images/battery_070.png",
                 "name": "BATTERY_070",
                 "type": "png"
@@ -43,12 +49,6 @@
             {
                 "file": "images/battery_090.png",
                 "name": "BATTERY_090",
-                "type": "png"
-            },
-            {
-                "file": "images/menu_icon.png",
-                "menuIcon": true,
-                "name": "IMAGE_MENU_ICON",
                 "type": "png"
             },
             {

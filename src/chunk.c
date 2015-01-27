@@ -55,8 +55,7 @@ static int mTemperatureDegrees=999;        //-999 to 999
 static int mTemperatureIcon=48;         //0 to 48
 static int mTemperatureHigh=999;          //-999 to 999
 static int mTemperatureLow=999;            //-999 to 999
-
-static int mLastUpdated=0;
+static long mWeatherLastUpdated=0;
 
 
 enum {
@@ -69,7 +68,8 @@ enum {
   WEATHER_TEMPERATUREHIGH_KEY = 0x6,   // TUPLE_INT
   WEATHER_TEMPERATURELOW_KEY = 0x7,    // TUPLE_INT
   BLINK_KEY = 0x8,                     // TUPLE_INT
-  DATEFORMAT_KEY = 0x9                 // TUPLE_INT
+  DATEFORMAT_KEY = 0x9 ,                // TUPLE_INT
+  WEATHER_UPDATED_KEY = 0xA            // TUPLE_INT
 };
 
 static uint8_t BATTERY_ICONS[] = {
@@ -520,7 +520,11 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   if (weather_low_tuple && weather_low_tuple->value->int16 != mTemperatureLow) {
     mTemperatureLow = weather_low_tuple->value->int16;
     setHighLow = true;
+    
+    //Accept as good date
+    mWeatherLastUpdated = time(NULL);
   }
+     
   if(setHighLow) {
     weather_set_highlow(mTemperatureHigh, mTemperatureLow);
   }
@@ -548,7 +552,7 @@ static void fetch_data(void) {
   Tuplet weather_icon_tuple = TupletInteger(WEATHER_ICON_KEY, 0);
   Tuplet weather_high_tuple = TupletInteger(WEATHER_TEMPERATUREHIGH_KEY, 0);
   Tuplet weather_low_tuple = TupletInteger(WEATHER_TEMPERATURELOW_KEY, 0);
-
+  
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
 
@@ -623,12 +627,14 @@ void write_persist_data(void){
   persist_write_int(PERSIST_KEY_HIGH, mTemperatureHigh);
   persist_write_int(PERSIST_KEY_LOW, mTemperatureLow);
   persist_write_int(PERSIST_KEY_WICON, mTemperatureIcon);
-  //persist_write_int(PERSIST_KEY_DATE, num_launches);
+  persist_write_int(PERSIST_KEY_DATE, mWeatherLastUpdated);
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist write %ld", mWeatherLastUpdated);
   
 }
 
 void read_persist_data(void){
-   
+    
   if (persist_exists(PERSIST_KEY_TEMP)) {
     // Load stored count
     mTemperatureDegrees = persist_read_int(PERSIST_KEY_TEMP);
@@ -649,12 +655,24 @@ void read_persist_data(void){
     mTemperatureIcon = persist_read_int(PERSIST_KEY_WICON);
   }
   
-   //if (persist_exists(PERSIST_KEY_DATE)) {
+   if (persist_exists(PERSIST_KEY_DATE)) {
     // Load stored count
-    //num_launches = persist_read_int(PERSIST_KEY_DATE);
-  //}
-  
-   
+     mWeatherLastUpdated = persist_read_int(PERSIST_KEY_DATE);
+     
+    // Check if data is old
+    time_t now = time(NULL);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist read current seconds %ld, last updated %ld", now, mWeatherLastUpdated);
+    if( (now - mWeatherLastUpdated) > (FREQUENCY_MINUTES * 60))
+    {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist data to old, diff  %ld", (now - mWeatherLastUpdated));
+      mTemperatureDegrees=999;       
+      mTemperatureIcon=48;       
+      mTemperatureHigh=999;         
+      mTemperatureLow=999;  
+    }
+     
+   }
+
 }
 
 void handle_init(void) {
