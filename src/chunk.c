@@ -8,8 +8,9 @@
 #define PERSIST_KEY_HIGH   101
 #define PERSIST_KEY_LOW    102
 #define PERSIST_KEY_DATE   103
-#define PERSIST_KEY_WICON   104
-
+#define PERSIST_KEY_WICON  104
+#define PERSIST_KEY_UPDATE_INT   105
+  
 static Window *mWindow;
 
 static Layer *mWindowLayer;
@@ -50,6 +51,7 @@ static int mConfigHourlyVibe;          //0=off 1=on
 static int mConfigWeatherUnit;         //1=Celsius 0=Fahrenheit
 static int mConfigBlink;               //0=Static 1=Blink
 static int mConfigDateFormat;          //0=Default 1=NoSuffix
+static int mConfigUpdateInterval=15;      //15=Default
 
 static int mTemperatureDegrees=999;        //-999 to 999
 static int mTemperatureIcon=48;         //0 to 48
@@ -69,7 +71,7 @@ enum {
   WEATHER_TEMPERATURELOW_KEY = 0x7,    // TUPLE_INT
   BLINK_KEY = 0x8,                     // TUPLE_INT
   DATEFORMAT_KEY = 0x9 ,                // TUPLE_INT
-  WEATHER_UPDATED_KEY = 0xA            // TUPLE_INT
+  UPDATE_INTERVAL_KEY = 0xA            // TUPLE_INT
 };
 
 static uint8_t BATTERY_ICONS[] = {
@@ -445,7 +447,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     strftime(minute_text, sizeof(minute_text), "%M", tick_time);	
     text_layer_set_text(mTimeMinutesLayer, minute_text);
     
-    if(FREQUENCY_MINUTES == mTimerMinute) {
+    if(mTimerMinute >= mConfigUpdateInterval  ) {
       fetch_data();
       mTimerMinute = 0;
     }
@@ -501,6 +503,15 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 		return;
     }
   }
+  
+  Tuple *updateint_tuple = dict_find(iter, UPDATE_INTERVAL_KEY);
+  if (updateint_tuple) {
+      mConfigUpdateInterval = updateint_tuple->value->int16;
+      if(mConfigUpdateInterval <=0 ) mConfigUpdateInterval=15;
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Get Update interval %d", mConfigUpdateInterval);
+		return;
+  }    
+    
   Tuple *weather_temperature_tuple = dict_find(iter, WEATHER_TEMPERATURE_KEY);
   if (weather_temperature_tuple && weather_temperature_tuple->value->int16 != mTemperatureDegrees) {
     mTemperatureDegrees = weather_temperature_tuple->value->int16;
@@ -548,6 +559,7 @@ static void fetch_data(void) {
   Tuplet blink_tuple = TupletInteger(BLINK_KEY, 0);
   Tuplet dateformat_tuple = TupletInteger(DATEFORMAT_KEY, 0);
   Tuplet units_tuple = TupletInteger(WEATHER_UNITS, 0);
+  Tuplet updateint_tuple = TupletInteger(UPDATE_INTERVAL_KEY, 0);
   Tuplet weather_temperature_tuple = TupletInteger(WEATHER_TEMPERATURE_KEY, 0);
   Tuplet weather_icon_tuple = TupletInteger(WEATHER_ICON_KEY, 0);
   Tuplet weather_high_tuple = TupletInteger(WEATHER_TEMPERATUREHIGH_KEY, 0);
@@ -570,6 +582,7 @@ static void fetch_data(void) {
   dict_write_tuplet(iter, &weather_low_tuple);
   dict_write_tuplet(iter, &blink_tuple);
   dict_write_tuplet(iter, &dateformat_tuple);
+  dict_write_tuplet(iter, &updateint_tuple);
   dict_write_end(iter);
 
   app_message_outbox_send();
@@ -628,8 +641,7 @@ void write_persist_data(void){
   persist_write_int(PERSIST_KEY_LOW, mTemperatureLow);
   persist_write_int(PERSIST_KEY_WICON, mTemperatureIcon);
   persist_write_int(PERSIST_KEY_DATE, mWeatherLastUpdated);
-  
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist write %ld", mWeatherLastUpdated);
+  persist_write_int(PERSIST_KEY_UPDATE_INT, mConfigUpdateInterval);
   
 }
 
@@ -655,14 +667,19 @@ void read_persist_data(void){
     mTemperatureIcon = persist_read_int(PERSIST_KEY_WICON);
   }
   
+    if (persist_exists(PERSIST_KEY_UPDATE_INT)) {
+      // Load stored count
+      mConfigUpdateInterval = persist_read_int(PERSIST_KEY_UPDATE_INT);
+    }
+  
    if (persist_exists(PERSIST_KEY_DATE)) {
     // Load stored count
      mWeatherLastUpdated = persist_read_int(PERSIST_KEY_DATE);
      
     // Check if data is old
     time_t now = time(NULL);
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist read current seconds %ld, last updated %ld", now, mWeatherLastUpdated);
-    if( (now - mWeatherLastUpdated) > (FREQUENCY_MINUTES * 60))
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist read current seconds %ld, last updated %ld, diff %ld, check %d", now, mWeatherLastUpdated,(now - mWeatherLastUpdated), (mConfigUpdateInterval * 60));
+    if( (now - mWeatherLastUpdated) > (mConfigUpdateInterval * 60))
     {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist data to old, diff  %ld", (now - mWeatherLastUpdated));
       mTemperatureDegrees=999;       
@@ -690,8 +707,6 @@ void handle_init(void) {
   mBackgroundLayer = layer_create(layer_get_frame(mWindowLayer));
   layer_add_child(mWindowLayer, mBackgroundLayer);
   layer_set_update_proc(mBackgroundLayer, update_background_callback);
-	
-	
 	
   //BATTERY_ICONS
   battery_image = gbitmap_create_with_resource(RESOURCE_ID_BATTERY_100);
@@ -782,10 +797,10 @@ void handle_init(void) {
   time_t now = time(NULL);
   struct tm *tick_time = localtime(&now);  
 
-  mInitialMinute = (tick_time->tm_min % FREQUENCY_MINUTES);
+  mInitialMinute = (tick_time->tm_min % mConfigUpdateInterval);
 
   handle_tick(tick_time, DAY_UNIT + HOUR_UNIT + MINUTE_UNIT + SECOND_UNIT);
-  tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+  tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
   
   bluetooth_connection_service_subscribe(bluetooth_connection_callback);
 	

@@ -9,7 +9,8 @@
         "low": 7,
         "style": 0,
         "temperature": 4,
-        "units": 3
+        "units": 3,
+        "updateinterval": 10
     },
     "capabilities": [
         "location",
