@@ -7,6 +7,7 @@
         "hourlyvibe": 2,
         "icon": 5,
         "low": 7,
+        "statusflag": 11,
         "style": 0,
         "temperature": 4,
         "units": 3,

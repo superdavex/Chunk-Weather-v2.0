@@ -71,7 +71,8 @@ enum {
   WEATHER_TEMPERATURELOW_KEY = 0x7,    // TUPLE_INT
   BLINK_KEY = 0x8,                     // TUPLE_INT
   DATEFORMAT_KEY = 0x9 ,                // TUPLE_INT
-  UPDATE_INTERVAL_KEY = 0xA            // TUPLE_INT
+  UPDATE_INTERVAL_KEY = 0xA  ,          // TUPLE_INT
+  STATUSFLAG_KEY = 0xB                        // TUPLE_INT
 };
 
 static uint8_t BATTERY_ICONS[] = {
@@ -192,6 +193,8 @@ typedef enum {
 	WEATHER_ICON_NOT_AVAILABLE=48
 } WeatherIcon;
 
+
+void weather_set_loading();
 
 char *upcase(char *str){
   char *s = str;
@@ -448,12 +451,24 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     text_layer_set_text(mTimeMinutesLayer, minute_text);
     
     if(mTimerMinute >= mConfigUpdateInterval  ) {
+      // APP_LOG(APP_LOG_LEVEL_DEBUG, "Gtimer %d %d", mTimerMinute,mConfigUpdateInterval);
       fetch_data();
       mTimerMinute = 0;
     }
     else {
       mTimerMinute++;
     } 
+    
+    // Check if data is old.  Means a messsage failure somewhere.  Allow 5 minutes buffer.
+   time_t now = time(NULL);
+    if( (now - mWeatherLastUpdated) > ((mConfigUpdateInterval + 5) * 60))
+    {
+      mTemperatureDegrees=999;       
+      mTemperatureIcon=48;       
+      mTemperatureHigh=999;         
+      mTemperatureLow=999; 
+      weather_set_loading();
+    }
 
   }
   if (mConfigBlink && (units_changed & SECOND_UNIT)) {
@@ -462,6 +477,9 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 }
 
 static void in_received_handler(DictionaryIterator *iter, void *context) {
+  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Receive");
+  
   bool setHighLow = false;
   Tuple *style_tuple = dict_find(iter, STYLE_KEY);
   if (style_tuple && style_tuple->value->uint8 != mConfigStyle) {
@@ -497,10 +515,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *units_tuple = dict_find(iter, WEATHER_UNITS);
   if (units_tuple) {
     if(units_tuple->value->uint8 != mConfigWeatherUnit) {
-		//APP_LOG(APP_LOG_LEVEL_DEBUG, "UNIT! %d, %d", mConfigWeatherUnit, units_tuple->value->uint8);
         mConfigWeatherUnit = units_tuple->value->uint8;
-        fetch_data();
-		return;
     }
   }
   
@@ -508,9 +523,19 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   if (updateint_tuple) {
       mConfigUpdateInterval = updateint_tuple->value->int16;
       if(mConfigUpdateInterval <=0 ) mConfigUpdateInterval=15;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Get Update interval %d", mConfigUpdateInterval);
-		return;
+      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Get Update interval %d", mConfigUpdateInterval);
   }    
+  
+  // Flag for return values from settings
+  Tuple *flag_tuple = dict_find(iter, STATUSFLAG_KEY);
+  if (flag_tuple) {
+    int statusflag =  flag_tuple->value->int16;
+   // APP_LOG(APP_LOG_LEVEL_DEBUG, "Settings Flag %d", statusflag); 
+
+    // Always fetch data if coming from settings.
+    if(statusflag ==1)      
+      fetch_data();
+  }   
     
   Tuple *weather_temperature_tuple = dict_find(iter, WEATHER_TEMPERATURE_KEY);
   if (weather_temperature_tuple && weather_temperature_tuple->value->int16 != mTemperatureDegrees) {
@@ -564,6 +589,8 @@ static void fetch_data(void) {
   Tuplet weather_icon_tuple = TupletInteger(WEATHER_ICON_KEY, 0);
   Tuplet weather_high_tuple = TupletInteger(WEATHER_TEMPERATUREHIGH_KEY, 0);
   Tuplet weather_low_tuple = TupletInteger(WEATHER_TEMPERATURELOW_KEY, 0);
+  Tuplet flag_tuple = TupletInteger(STATUSFLAG_KEY, 0);
+  
   
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
@@ -583,15 +610,16 @@ static void fetch_data(void) {
   dict_write_tuplet(iter, &blink_tuple);
   dict_write_tuplet(iter, &dateformat_tuple);
   dict_write_tuplet(iter, &updateint_tuple);
+  dict_write_tuplet(iter, &flag_tuple);
   dict_write_end(iter);
 
   app_message_outbox_send();
 }
 
-static void app_message_init(void) {
+static void app_message_init(bool needs_update) {
   app_message_register_inbox_received(in_received_handler);
   app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
-  fetch_data();
+  if(needs_update) fetch_data();
 }
 
 static void update_battery(BatteryChargeState charge_state) {
@@ -645,37 +673,37 @@ void write_persist_data(void){
   
 }
 
-void read_persist_data(void){
+bool read_persist_data(void){
     
   if (persist_exists(PERSIST_KEY_TEMP)) {
     // Load stored count
     mTemperatureDegrees = persist_read_int(PERSIST_KEY_TEMP);
   }
-  
+
   if (persist_exists(PERSIST_KEY_HIGH)) {
     // Load stored count
     mTemperatureHigh = persist_read_int(PERSIST_KEY_HIGH);
   }
-  
-   if (persist_exists(PERSIST_KEY_LOW)) {
+
+  if (persist_exists(PERSIST_KEY_LOW)) {
     // Load stored count
     mTemperatureLow = persist_read_int(PERSIST_KEY_LOW);
   }
-  
-   if (persist_exists(PERSIST_KEY_WICON)) {
+
+  if (persist_exists(PERSIST_KEY_WICON)) {
     // Load stored count
     mTemperatureIcon = persist_read_int(PERSIST_KEY_WICON);
   }
-  
-    if (persist_exists(PERSIST_KEY_UPDATE_INT)) {
-      // Load stored count
-      mConfigUpdateInterval = persist_read_int(PERSIST_KEY_UPDATE_INT);
-    }
-  
-   if (persist_exists(PERSIST_KEY_DATE)) {
+
+  if (persist_exists(PERSIST_KEY_UPDATE_INT)) {
     // Load stored count
-     mWeatherLastUpdated = persist_read_int(PERSIST_KEY_DATE);
-     
+    mConfigUpdateInterval = persist_read_int(PERSIST_KEY_UPDATE_INT);
+  }
+
+  if (persist_exists(PERSIST_KEY_DATE)) {
+    // Load stored count
+    mWeatherLastUpdated = persist_read_int(PERSIST_KEY_DATE);
+
     // Check if data is old
     time_t now = time(NULL);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Persist read current seconds %ld, last updated %ld, diff %ld, check %d", now, mWeatherLastUpdated,(now - mWeatherLastUpdated), (mConfigUpdateInterval * 60));
@@ -686,14 +714,20 @@ void read_persist_data(void){
       mTemperatureIcon=48;       
       mTemperatureHigh=999;         
       mTemperatureLow=999;  
+      return true;
     }
-     
-   }
-
+  }
+  else
+  {
+    return true;
+  }
+  
+  return false;
 }
 
 void handle_init(void) {
-
+  bool needs_update=false;
+  
   // WINDOW //
   mWindow = window_create();
   if (mWindow == NULL) {
@@ -788,11 +822,11 @@ void handle_init(void) {
 	layer_add_child(mWindowLayer, text_layer_get_layer(mHighLowLayer));
 
   // READ Persist data
-  read_persist_data();
+  needs_update = read_persist_data();
   
 	weather_set_loading();
 
-  app_message_init();
+  app_message_init(needs_update);
 
   time_t now = time(NULL);
   struct tm *tick_time = localtime(&now);  

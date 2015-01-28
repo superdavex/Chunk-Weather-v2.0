@@ -2,7 +2,6 @@ var mConfig = {};
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 var WorldWeatherkey = "b317f0a674d01abfaa41673acc028";
 
-
 /* Convenient function to automatically retry messages. */
 Pebble.sendAppMessageWithRetry = function(message, retryCount, successCb, failedCb) {
   var retry = 0;
@@ -146,10 +145,10 @@ function fetchWeather(latitude, longitude) {
           }
 
           
-          // Temp for debugging
-          //var d = new Date();
-          //var n = d.getMinutes();
-          //low =n;
+         //  Temp for debugging
+        //  var d = new Date();
+        //  var n = d.getMinutes();
+        //  low =n;
    
         }
 
@@ -172,7 +171,7 @@ function fetchWeather(latitude, longitude) {
 function locationSuccess(pos) {
     //console.log("JS locationSuccess()");
     var coordinates = pos.coords;
-  console.log("Lat-" + coordinates.latitude + " Lon-" + coordinates.longitude)  ;
+  //console.log("Lat-" + coordinates.latitude + " Lon-" + coordinates.longitude)  ;
   fetchWeather(coordinates.latitude, coordinates.longitude);
 }
 
@@ -234,7 +233,8 @@ function loadLocalData() {
     } 
   
 }
-function returnConfigToPebble() {
+function returnConfigToPebble(flag) {
+
     Pebble.sendAppMessageWithRetry({
         "style":parseInt(mConfig.style), 
         "bluetoothvibe":parseInt(mConfig.bluetoothvibe), 
@@ -242,10 +242,11 @@ function returnConfigToPebble() {
         "units":parseInt(mConfig.units),
         "blink":parseInt(mConfig.blink),
         "dateformat":parseInt(mConfig.dateformat),
-        "updateinterval":parseInt(mConfig.updateinterval)
+        "updateinterval":parseInt(mConfig.updateinterval),
+        "statusflag":parseInt(flag)
       
     }, 10);
-    getWeather();
+
 }
 function UnitsToString(unit) {
   if(unit===0) {
@@ -270,7 +271,7 @@ function getWeather() {
 
 Pebble.addEventListener("ready", function(e) {
   loadLocalData();
-  returnConfigToPebble();
+  returnConfigToPebble(0);
 });
 
 
@@ -309,7 +310,7 @@ Pebble.addEventListener("webviewclosed", function(e) {
   if (e.response) {
     var config = JSON.parse(e.response);
     saveLocalData(config);
-    returnConfigToPebble();
+    returnConfigToPebble(1);
   }
 });
 
