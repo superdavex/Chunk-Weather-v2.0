@@ -43,6 +43,7 @@ static GFont *mTemperatureFont;
 //static GFont *mHighLowFont;
 
 static int mTimerMinute = 0;
+static int mMinuteRetry = 0;
 static int mInitialMinute;
 
 static int mConfigStyle;               //1=BlackOnWhite, 2=Split1(WhiteTop), 3=WhiteOnBlack, 4=Split2(BlackTop)
@@ -450,6 +451,26 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     strftime(minute_text, sizeof(minute_text), "%M", tick_time);	
     text_layer_set_text(mTimeMinutesLayer, minute_text);
     
+    // Check if data is old.  Means a messsage failure somewhere.  Allow 2 minutes padding.
+   time_t now = time(NULL);
+    if( (now - mWeatherLastUpdated) > ((mConfigUpdateInterval + 2) * 60)  )
+    {
+      // Try Five times to pull data then fail
+      if(mMinuteRetry <= 5)
+      {
+        mMinuteRetry++;
+        mTimerMinute = mConfigUpdateInterval +1;
+      }
+      else
+      {
+        mTemperatureDegrees=998;       
+        mTemperatureIcon=48;       
+        mTemperatureHigh=998;         
+        mTemperatureLow=998; 
+        weather_set_loading();
+      }
+    }
+    
     if(mTimerMinute >= mConfigUpdateInterval  ) {
       // APP_LOG(APP_LOG_LEVEL_DEBUG, "Gtimer %d %d", mTimerMinute,mConfigUpdateInterval);
       fetch_data();
@@ -458,19 +479,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     else {
       mTimerMinute++;
     } 
-    
-    // Check if data is old.  Means a messsage failure somewhere.  Allow 5 minutes buffer.
-   time_t now = time(NULL);
-    if( (now - mWeatherLastUpdated) > ((mConfigUpdateInterval + 5) * 60))
-    {
-      mTemperatureDegrees=999;       
-      mTemperatureIcon=48;       
-      mTemperatureHigh=999;         
-      mTemperatureLow=999; 
-      weather_set_loading();
-    }
-
   }
+  
   if (mConfigBlink && (units_changed & SECOND_UNIT)) {
     layer_set_hidden(text_layer_get_layer(mTimeSeparatorLayer), tick_time->tm_sec%2);
   }
@@ -553,12 +563,18 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
     setHighLow = true;
   }
   Tuple *weather_low_tuple = dict_find(iter, WEATHER_TEMPERATURELOW_KEY);
-  if (weather_low_tuple && weather_low_tuple->value->int16 != mTemperatureLow) {
-    mTemperatureLow = weather_low_tuple->value->int16;
-    setHighLow = true;
+  if (weather_low_tuple ) {
     
-    //Accept as good date
+    if(weather_low_tuple->value->int16 != mTemperatureLow)
+      setHighLow = true;
+    
+    mTemperatureLow = weather_low_tuple->value->int16;
+    
+    //Accept as good data
     mWeatherLastUpdated = time(NULL);
+    
+    // Reset retry counter
+    mMinuteRetry = 0;
   }
      
   if(setHighLow) {
