@@ -18,6 +18,8 @@ static Layer *mBackgroundLayer;
 
 static BitmapLayer *mWeatherIconLayer;
 
+static BitmapLayer *mBTIconLayer;
+
 static GBitmap *battery_image;
 static BitmapLayer *battery_image_layer;
 
@@ -36,6 +38,8 @@ static char mTemperatureText[8];
 static char mHighLowText[36];
 
 static GBitmap *mWeatherIcon;
+static GBitmap *mBTIcon;
+
 
 //static GFont *mDateFont;
 static GFont *mTimeFont;
@@ -347,6 +351,8 @@ static void fetch_data(void);
 
 static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 
+   // APP_LOG(APP_LOG_LEVEL_DEBUG, "Tick");
+    // Days
   if (units_changed & DAY_UNIT) {
   
 		char *sys_locale = setlocale(LC_ALL, "");
@@ -418,7 +424,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     text_layer_set_text(mDateLayer, full_date_text);
   }
 	
-    
+    // Hours
   if (units_changed & HOUR_UNIT) { 
     static char hour_text[] = "00";
     
@@ -446,6 +452,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     }
     text_layer_set_text(mTimeHourLayer, hour_text);
   }
+    
+    // Minutes
   if (units_changed & MINUTE_UNIT) {
     static char minute_text[] = "00";	
     strftime(minute_text, sizeof(minute_text), "%M", tick_time);	
@@ -583,17 +591,28 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 }
 
 static void toggle_bluetooth(bool connected) {
-  if(!connected && mConfigBluetoothVibe) {
-    //vibe!
-    vibes_long_pulse();
+    
+  if(!connected ) 
+{
+      mBTIcon = gbitmap_create_with_resource(RESOURCE_ID_BLUETOOTH_DISCONNECTED);
+      mBTIconLayer = bitmap_layer_create(GRect(100, 78, 12, 12));
+      bitmap_layer_set_bitmap(mBTIconLayer, mBTIcon);
+      layer_add_child(mWindowLayer, bitmap_layer_get_layer(mBTIconLayer));
+     
+     //vibe!
+    if(mConfigBluetoothVibe) vibes_long_pulse();
   }
+else{
+    layer_remove_from_parent(bitmap_layer_get_layer(mBTIconLayer));
+ }
 }
 void bluetooth_connection_callback(bool connected) {
   toggle_bluetooth(connected);
 }
 
 static void fetch_data(void) {
-
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Fetching Data");
+    
   Tuplet style_tuple = TupletInteger(STYLE_KEY, 0);
   Tuplet bluetoothvibe_tuple = TupletInteger(BLUETOOTHVIBE_KEY, 0);
   Tuplet hourlyvibe_tuple = TupletInteger(HOURLYVIBE_KEY, 0);

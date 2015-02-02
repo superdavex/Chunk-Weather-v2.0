@@ -1,6 +1,6 @@
 var mConfig = {};
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
-var WorldWeatherkey = "b317f0a674d01abfaa41673acc028";
+
 
 /* Convenient function to automatically retry messages. */
 Pebble.sendAppMessageWithRetry = function(message, retryCount, successCb, failedCb) {
@@ -26,8 +26,130 @@ Pebble.sendAppMessageWithRetry = function(message, retryCount, successCb, failed
   Pebble.sendAppMessage(message, success, failed);
 };
 
+function fetchWeatherWU(latitude, longitude) {
+  // Weather Underground
+  
+  var WUKey = "";
+  var WUIconMap =[];
+  
+  WUIconMap["chanceflurries"] = 13;
+  WUIconMap["chancerain"] = 11;
+  WUIconMap["chancesleet"] = 18;
+  WUIconMap["chancesnow"] = 46;
+  WUIconMap["chancetstorms"] = 3;
+  WUIconMap["clear"] = 32;
+  WUIconMap["cloudy"] = 26;
+  WUIconMap["flurries"] = 13;
+  WUIconMap["fog"] = 20;
+  WUIconMap["hazy"] = 21;
+  WUIconMap["mostlycloudy"] = 28;
+  WUIconMap["mostlysunny"] = 30;
+  WUIconMap["partlycloudy"] = 28;
+  WUIconMap["partlysunny"] = 30;
+  WUIconMap["sleet"] = 18;
+  WUIconMap["rain"] = 12;
+  WUIconMap["snow"] = 46;
+  WUIconMap["sunny"] = 0;
+  WUIconMap["tstorms"] = 3;
+  WUIconMap["cloudy"] = 26;
+  
+  WUIconMap["nt_chanceflurries"] = 13;
+  WUIconMap["nt_chancerain"] = 11;
+  WUIconMap["nt_chancesleet"] = 18;
+  WUIconMap["nt_chancesnow"] = 46;
+  WUIconMap["nt_chancetstorms"] = 3;
+  WUIconMap["nt_clear"] = 31;
+  WUIconMap["nt_cloudy"] = 26;
+  WUIconMap["nt_flurries"] = 13;
+  WUIconMap["nt_fog"] = 20;
+  WUIconMap["nt_hazy"] = 21;
+  WUIconMap["nt_mostlycloudy"] = 27;
+  WUIconMap["nt_mostlysunny"] = 29;
+  WUIconMap["nt_partlycloudy"] = 27;
+  WUIconMap["nt_partlysunny"] = 29;
+  WUIconMap["nt_sleet"] = 18;
+  WUIconMap["nt_rain"] = 12;
+  WUIconMap["nt_snow"] = 46;
+  WUIconMap["nt_sunny"] = 31;
+  WUIconMap["nt_tstorms"] = 3;
+  WUIconMap["nt_cloudy"] = 27;
 
-function fetchWeather(latitude, longitude) {
+  logData("Fetching WU Weather.");
+
+  var response;
+  var req = new XMLHttpRequest();
+  
+  req.open('GET', "http://api.wunderground.com/api/" + WUKey + "/geolookup/conditions/forecast/astronomy/pws:0/q/" + latitude + "," + longitude + ".json");
+
+  //UnitsToString(mConfig.units), true)
+  req.onload = function(e) {
+    
+   var temperature = 999;
+   var code = 999;
+   var high =999;
+   var low= 999;
+   var sunset= 16;
+      
+    if (req.readyState == 4) {
+      if(req.status == 200) {
+        response = JSON.parse(req.responseText);
+ 
+        if (response) {
+          var weatherResult = response;
+           
+          sunset = parseInt(weatherResult.sun_phase.sunset.hour);
+          code = weatherResult.forecast.simpleforecast.forecastday[0].icon;                  
+        
+          var dt = new Date();
+          if(dt.getHours() >= sunset)
+                 code = "nt_" + code;
+            
+          // Convert to mapped code      
+          code = WUIconMap[code];     
+             
+          if(mConfig.units ==0) // F
+          {
+              temperature = parseInt(weatherResult.current_observation.temp_f);
+              high = parseInt( weatherResult.forecast.simpleforecast.forecastday[0].high.fahrenheit);
+              low = parseInt(weatherResult.forecast.simpleforecast.forecastday[0].low.fahrenheit);
+          }
+          else // C
+          {
+              temperature = parseInt(weatherResult.current_observation.temp_c);
+              high = parseInt(weatherResult.forecast.simpleforecast.forecastday[0].high.celsius);
+              low = parseInt(weatherResult.forecast.simpleforecast.forecastday[0].low.celsius);
+          }
+        }
+        else
+        {
+          logData("Fetching Weather Failed, no response.");
+        }
+
+      } else {
+        logData("Fetching Weather Failed, status " + req.status + ".");
+      }
+    }
+    else
+    {
+      logData("Fetching Weather Failed, ready state " + req.readyState + ".");
+    }
+
+    Pebble.sendAppMessageWithRetry({
+            "temperature": temperature,
+            "icon": code,
+            "high": high,
+            "low": low
+            }, 10);
+    
+  };
+  req.send(null);
+}
+
+
+function fetchWeatherWWO(latitude, longitude) {
+  
+  // Word Weather Online
+  var WorldWeatherkey = "";
   
   var bNight = false;
   var WWIconMap =[]; 
@@ -84,7 +206,7 @@ function fetchWeather(latitude, longitude) {
   WWIconMap[1130] = 31; //Clear/Sunny Night
   
 
-  logData("Fetching Weather.");
+  logData("Fetching WWO Weather.");
   
   var response;
   var req = new XMLHttpRequest();
@@ -172,9 +294,8 @@ function fetchWeather(latitude, longitude) {
 
 function locationSuccess(pos) {
     //console.log("JS locationSuccess()");
-    var coordinates = pos.coords;
-  //console.log("Lat-" + coordinates.latitude + " Lon-" + coordinates.longitude)  ;
-  fetchWeather(coordinates.latitude, coordinates.longitude);
+  var coordinates = pos.coords;
+  fetchWeatherWU(coordinates.latitude, coordinates.longitude);
 }
 
 (function() {
@@ -287,8 +408,12 @@ function getWeather() {
   console.log("get weather-" + mConfig.gpslat );
   
 	if(mConfig.gpslat!=='' && mConfig.gpslon!=='') {
+        // Emulator test
+        if(mConfig.gpslat  == null || mConfig.gpslon ==null )
+           fetchWeatherWU('36.8157139','-76.066467');
+    
 		//console.log("used fixed gps");
-		fetchWeather(mConfig.gpslat, mConfig.gpslon);
+		fetchWeatherWU(mConfig.gpslat, mConfig.gpslon);
 	}
 	else {
 		//console.log("used auto gps")'
